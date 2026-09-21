@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homework Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #23291f;
+    --paper: #fbf8f1;
+    --paper-raised: #ffffff;
+    --rule: #d8d2c2;
+    --moss: #4a6741;
+    --moss-deep: #35492f;
+    --clay: #b1552f;
+    --muted: #7a7566;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    padding: 40px 20px 28px;
+    text-align: center;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  header h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: clamp(28px, 6vw, 40px);
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+  }
+
+  .wrap {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 24px 16px 80px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .chip {
+    border: 1px solid var(--rule);
+    background: var(--paper-raised);
+    color: var(--ink);
+    padding: 7px 14px;
+    border-radius: 100px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .chip.active {
+    background: var(--moss);
+    border-color: var(--moss);
+    color: #fff;
+  }
+
+  .entry {
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--moss);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+
+  .entry-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .entry-subject {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--moss-deep);
+  }
+
+  .entry-date {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .entry-desc {
+    font-size: 16px;
+    line-height: 1.5;
+    margin: 0 0 10px;
+  }
+
+  .entry-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--clay);
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+  }
+  .entry-link:hover { text-decoration: underline; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+
+  .admin-toggle {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(35,41,31,0.45);
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 50;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--paper);
+    width: 100%;
+    max-width: 480px;
+    border-radius: 16px 16px 0 0;
+    padding: 24px 20px 32px;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  @media (min-width: 540px) {
+    .modal-overlay { align-items: center; }
+    .modal { border-radius: 16px; }
+  }
+
+  .modal h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
+  .modal .sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 14px 0 6px;
+  }
+
+  input, textarea, select {
+    width: 100%;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    background: #fff;
+    color: var(--ink);
+  }
+  textarea { min-height: 70px; resize: vertical; }
+
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 18px;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--moss); color: #fff; width: 100%; margin-top: 18px; }
+  .btn-ghost { background: transparent; color: var(--muted); }
+  .btn-danger { background: transparent; color: var(--clay); font-size: 13px; }
+  .btn-close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; }
+  .modal { position: relative; }
+
+  .signed-in-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .homework-list-admin .entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .homework-list-admin .entry-info { flex: 1; }
+
+  .divider { border: none; border-top: 1px solid var(--rule); margin: 18px 0; }
+
+  #g-signin-btn {
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 14px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .status-msg { font-size: 13px; color: var(--clay); margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Homework Board</h1>
+  <p>Check here anytime for worksheets and homework</p>
+</header>
+
+<div class="wrap">
+  <div class="controls" id="subjectFilters"></div>
+  <div id="list"></div>
+</div>
+
+<button class="admin-toggle" id="adminToggle" title="Teacher login">⚙</button>
+
+<!-- Admin Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="btn-close" id="closeModal">✕</button>
+
+    <div id="loginView">
+      <h2>Teacher sign-in</h2>
+      <p class="sub">Sign in with your Google account to manage homework.</p>
+      <button id="g-signin-btn">Sign in with Google</button>
+      <p class="status-msg" id="loginStatus"></p>
+    </div>
+
+    <div id="adminView" style="display:none;">
+      <div class="signed-in-bar">
+        <span id="signedInAs"></span>
+        <button class="btn-ghost" id="signOutBtn">Sign out</button>
+      </div>
+
+      <h2 id="formTitle">Add homework</h2>
+      <input type="hidden" id="editId">
+      <label>Subject</label>
+      <input type="text" id="fSubject" placeholder="e.g. Math">
+      <label>Date</label>
+      <input type="date" id="fDate">
+      <label>Instructions</label>
+      <textarea id="fDesc" placeholder="What should students do?"></textarea>
+      <label>Worksheet / link (optional)</label>
+      <input type="text" id="fLink" placeholder="https://drive.google.com/...">
+      <button class="btn btn-primary" id="saveBtn">Save homework</button>
+      <p class="status-msg" id="saveStatus"></p>
+
+      <hr class="divider">
+      <p class="sub" style="margin-bottom:10px;">Existing entries — tap to edit</p>
+      <div id="adminList" class="homework-list-admin"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
+    onSnapshot, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ====== PASTE YOUR FIREBASE CONFIG HERE ======
+  const firebaseConfig = {
+    apiKey: "AIzaSyBgNVKnhrpa1Dl9dXz2tgJ_Z8Sh7weJhoA",
+    authDomain: "homework-board-13429.firebaseapp.com",
+    projectId: "homework-board-13429",
+    storageBucket: "homework-board-13429.firebasestorage.app",
+    messagingSenderId: "161815780018",
+    appId: "1:161815780018:web:a3740fe319c555570487ab"
+  };
+  // The email allowed to sign in as teacher/admin
+  const TEACHER_EMAIL = "sehaj.83@gmail.com";
+  // ===============================================
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+
+  let allEntries = [];
+  let activeSubject = "All";
+
+  const listEl = document.getElementById("list");
+  const filtersEl = document.getElementById("subjectFilters");
+  const adminListEl = document.getElementById("adminList");
+
+  const q = query(collection(db, "homework"), orderBy("date", "desc"));
+  onSnapshot(q, (snap) => {
+    allEntries = [];
+    snap.forEach(d => allEntries.push({ id: d.id, ...d.data() }));
+    renderFilters();
+    renderList();
+    renderAdminList();
+  });
+
+  function renderFilters() {
+    const subjects = ["All", ...new Set(allEntries.map(e => e.subject).filter(Boolean))];
+    filtersEl.innerHTML = subjects.map(s =>
+      `<button class="chip ${s === activeSubject ? 'active' : ''}" data-subj="${escapeAttr(s)}">${escapeHtml(s)}</button>`
+    ).join("");
+    filtersEl.querySelectorAll(".chip").forEach(btn => {
+      btn.onclick = () => { activeSubject = btn.dataset.subj; renderFilters(); renderList(); };
+    });
+  }
+
+  function renderList() {
+    const entries = activeSubject === "All"
+      ? allEntries
+      : allEntries.filter(e => e.subject === activeSubject);
+
+    if (entries.length === 0) {
+      listEl.innerHTML = `<div class="empty">No homework posted yet. Check back soon.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = entries.map(e => `
+      <div class="entry">
+        <div class="entry-top">
+          <span class="entry-subject">${escapeHtml(e.subject || "General")}</span>
+          <span class="entry-date">${formatDate(e.date)}</span>
+        </div>
+        <p class="entry-desc">${escapeHtml(e.description || "")}</p>
+        ${e.link ? `<a class="entry-link" href="${escapeAttr(e.link)}" target="_blank" rel="noopener">Open worksheet →</a>` : ""}
+      </div>
+    `).join("");
+  }
+
+  function renderAdminList() {
+    adminListEl.innerHTML = allEntries.map(e => `
+      <div class="entry" data-id="${e.id}" style="cursor:pointer;">
+        <div class="entry-info">
+          <div class="entry-top"><span class="entry-subject">${escapeHtml(e.subject||"General")}</span><span class="entry-date">${formatDate(e.date)}</span></div>
+          <p class="entry-desc" style="font-size:14px;">${escapeHtml((e.description||"").slice(0,60))}</p>
+        </div>
+        <button class="btn-danger" data-del="${e.id}">Delete</button>
+      </div>
+    `).join("");
+
+    adminListEl.querySelectorAll("[data-del]").forEach(btn => {
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        if (confirm("Delete this homework entry?")) {
+          await deleteDoc(doc(db, "homework", btn.dataset.del));
+        }
+      };
+    });
+    adminListEl.querySelectorAll(".entry").forEach(row => {
+      row.onclick = () => {
+        const entry = allEntries.find(e => e.id === row.dataset.id);
+        if (entry) loadEntryIntoForm(entry);
+      };
+    });
+  }
+
+  function loadEntryIntoForm(e) {
+    document.getElementById("editId").value = e.id;
+    document.getElementById("fSubject").value = e.subject || "";
+    document.getElementById("fDate").value = e.date || "";
+    document.getElementById("fDesc").value = e.description || "";
+    document.getElementById("fLink").value = e.link || "";
+    document.getElementById("formTitle").textContent = "Edit homework";
+  }
+
+  function resetForm() {
+    document.getElementById("editId").value = "";
+    document.getElementById("fSubject").value = "";
+    document.getElementById("fDate").value = "";
+    document.getElementById("fDesc").value = "";
+    document.getElementById("fLink").value = "";
+    document.getElementById("formTitle").textContent = "Add homework";
+  }
+
+  document.getElementById("saveBtn").onclick = async () => {
+    const id = document.getElementById("editId").value;
+    const subject = document.getElementById("fSubject").value.trim();
+    const date = document.getElementById("fDate").value;
+    const description = document.getElementById("fDesc").value.trim();
+    const link = document.getElementById("fLink").value.trim();
+    const statusEl = document.getElementById("saveStatus");
+
+    if (!subject || !date || !description) {
+      statusEl.textContent = "Please fill in subject, date and instructions.";
+      return;
+    }
+    statusEl.textContent = "Saving...";
+    try {
+      if (id) {
+        await updateDoc(doc(db, "homework", id), { subject, date, description, link });
+      } else {
+        await addDoc(collection(db, "homework"), { subject, date, description, link, createdAt: serverTimestamp() });
+      }
+      statusEl.textContent = "Saved.";
+      resetForm();
+      setTimeout(() => statusEl.textContent = "", 1500);
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    }
+  };
+
+  // Auth
+  document.getElementById("g-signin-btn").onclick = () => {
+    signInWithPopup(auth, provider).catch(err => {
+      document.getElementById("loginStatus").textContent = err.message;
+    });
+  };
+  document.getElementById("signOutBtn").onclick = () => signOut(auth);
+
+  onAuthStateChanged(auth, (user) => {
+    const loginView = document.getElementById("loginView");
+    const adminView = document.getElementById("adminView");
+    if (user && user.email === TEACHER_EMAIL) {
+      loginView.style.display = "none";
+      adminView.style.display = "block";
+      document.getElementById("signedInAs").textContent = "Signed in as " + user.email;
+    } else if (user) {
+      document.getElementById("loginStatus").textContent = "This Google account isn't authorized as teacher.";
+      signOut(auth);
+    } else {
+      loginView.style.display = "block";
+      adminView.style.display = "none";
+    }
+  });
+
+  // Modal open/close
+  const overlay = document.getElementById("modalOverlay");
+  document.getElementById("adminToggle").onclick = () => overlay.classList.add("open");
+  document.getElementById("closeModal").onclick = () => overlay.classList.remove("open");
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.remove("open"); };
+
+  // Helpers
+  function formatDate(d) {
+    if (!d) return "";
+    const dt = new Date(d + "T00:00:00");
+    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+</script>
+
+</body>
+</html>
