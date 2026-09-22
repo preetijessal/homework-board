@@ -247,6 +247,46 @@
   }
 
   .status-msg { font-size: 13px; color: var(--clay); margin-top: 10px; min-height: 16px; }
+
+  .announcements { margin-bottom: 22px; }
+
+  .announce {
+    background: #fff7ec;
+    border: 1px solid #ecd9b8;
+    border-left: 4px solid var(--clay);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+  }
+
+  .announce-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .announce-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 100px;
+    color: #fff;
+  }
+  .tag-Test { background: var(--clay); }
+  .tag-Reminder { background: #b1892f; }
+  .tag-Event { background: var(--moss); }
+  .tag-General { background: var(--muted); }
+
+  .announce-date { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .announce-subject { font-weight: 600; font-size: 13px; color: var(--moss-deep); margin: 2px 0 4px; }
+  .announce-msg { font-size: 15px; line-height: 1.5; margin: 0; }
+
+  .admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
 </style>
 </head>
 <body>
@@ -257,6 +297,7 @@
 </header>
 
 <div class="wrap">
+  <div class="announcements" id="announcementsWrap"></div>
   <div class="controls" id="subjectFilters"></div>
   <div id="list"></div>
 </div>
@@ -281,22 +322,53 @@
         <button class="btn-ghost" id="signOutBtn">Sign out</button>
       </div>
 
-      <h2 id="formTitle">Add homework</h2>
-      <input type="hidden" id="editId">
-      <label>Subject</label>
-      <input type="text" id="fSubject" placeholder="e.g. Math">
-      <label>Date</label>
-      <input type="date" id="fDate">
-      <label>Instructions</label>
-      <textarea id="fDesc" placeholder="What should students do?"></textarea>
-      <label>Worksheet / link (optional)</label>
-      <input type="text" id="fLink" placeholder="https://drive.google.com/...">
-      <button class="btn btn-primary" id="saveBtn">Save homework</button>
-      <p class="status-msg" id="saveStatus"></p>
+      <div class="admin-tabs">
+        <button class="chip active" id="tabHomeworkBtn">Homework</button>
+        <button class="chip" id="tabAnnounceBtn">Announcements</button>
+      </div>
 
-      <hr class="divider">
-      <p class="sub" style="margin-bottom:10px;">Existing entries — tap to edit</p>
-      <div id="adminList" class="homework-list-admin"></div>
+      <div id="homeworkPanel">
+        <h2 id="formTitle">Add homework</h2>
+        <input type="hidden" id="editId">
+        <label>Subject</label>
+        <input type="text" id="fSubject" placeholder="e.g. Math">
+        <label>Date</label>
+        <input type="date" id="fDate">
+        <label>Instructions</label>
+        <textarea id="fDesc" placeholder="What should students do?"></textarea>
+        <label>Worksheet / link (optional)</label>
+        <input type="text" id="fLink" placeholder="https://drive.google.com/...">
+        <button class="btn btn-primary" id="saveBtn">Save homework</button>
+        <p class="status-msg" id="saveStatus"></p>
+
+        <hr class="divider">
+        <p class="sub" style="margin-bottom:10px;">Existing entries — tap to edit</p>
+        <div id="adminList" class="homework-list-admin"></div>
+      </div>
+
+      <div id="announcePanel" style="display:none;">
+        <h2 id="aFormTitle">Add announcement</h2>
+        <input type="hidden" id="aEditId">
+        <label>Type</label>
+        <select id="aType">
+          <option value="Test">Test</option>
+          <option value="Reminder">Reminder</option>
+          <option value="Event">Event</option>
+          <option value="General">General</option>
+        </select>
+        <label>Subject / grade (optional)</label>
+        <input type="text" id="aSubject" placeholder="e.g. Grade 8 Maths">
+        <label>Date</label>
+        <input type="date" id="aDate">
+        <label>Message</label>
+        <textarea id="aMessage" placeholder="e.g. Test on scientific notation"></textarea>
+        <button class="btn btn-primary" id="aSaveBtn">Save announcement</button>
+        <p class="status-msg" id="aSaveStatus"></p>
+
+        <hr class="divider">
+        <p class="sub" style="margin-bottom:10px;">Existing announcements — tap to edit</p>
+        <div id="aAdminList" class="homework-list-admin"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -331,11 +403,14 @@
   const provider = new GoogleAuthProvider();
 
   let allEntries = [];
+  let allAnnouncements = [];
   let activeSubject = "All";
 
   const listEl = document.getElementById("list");
   const filtersEl = document.getElementById("subjectFilters");
   const adminListEl = document.getElementById("adminList");
+  const announceWrapEl = document.getElementById("announcementsWrap");
+  const aAdminListEl = document.getElementById("aAdminList");
 
   const q = query(collection(db, "homework"), orderBy("date", "desc"));
   onSnapshot(q, (snap) => {
@@ -345,6 +420,121 @@
     renderList();
     renderAdminList();
   });
+
+  const aq = query(collection(db, "announcements"), orderBy("date", "asc"));
+  onSnapshot(aq, (snap) => {
+    allAnnouncements = [];
+    snap.forEach(d => allAnnouncements.push({ id: d.id, ...d.data() }));
+    renderAnnouncements();
+    renderAnnounceAdminList();
+  });
+
+  function renderAnnouncements() {
+    const today = new Date().toISOString().slice(0, 10);
+    const upcoming = allAnnouncements.filter(a => !a.date || a.date >= today);
+
+    if (upcoming.length === 0) {
+      announceWrapEl.innerHTML = "";
+      return;
+    }
+
+    announceWrapEl.innerHTML = upcoming.map(a => `
+      <div class="announce">
+        <div class="announce-top">
+          <span class="announce-tag tag-${escapeAttr(a.type || "General")}">${escapeHtml(a.type || "General")}</span>
+          <span class="announce-date">${formatDate(a.date)}</span>
+        </div>
+        ${a.subject ? `<p class="announce-subject">${escapeHtml(a.subject)}</p>` : ""}
+        <p class="announce-msg">${escapeHtml(a.message || "")}</p>
+      </div>
+    `).join("");
+  }
+
+  function renderAnnounceAdminList() {
+    aAdminListEl.innerHTML = allAnnouncements.map(a => `
+      <div class="entry" data-id="${a.id}" style="cursor:pointer;">
+        <div class="entry-info">
+          <div class="entry-top"><span class="entry-subject">${escapeHtml(a.type||"General")}${a.subject ? " · " + escapeHtml(a.subject) : ""}</span><span class="entry-date">${formatDate(a.date)}</span></div>
+          <p class="entry-desc" style="font-size:14px;">${escapeHtml((a.message||"").slice(0,60))}</p>
+        </div>
+        <button class="btn-danger" data-adel="${a.id}">Delete</button>
+      </div>
+    `).join("");
+
+    aAdminListEl.querySelectorAll("[data-adel]").forEach(btn => {
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        if (confirm("Delete this announcement?")) {
+          await deleteDoc(doc(db, "announcements", btn.dataset.adel));
+        }
+      };
+    });
+    aAdminListEl.querySelectorAll(".entry").forEach(row => {
+      row.onclick = () => {
+        const a = allAnnouncements.find(x => x.id === row.dataset.id);
+        if (a) loadAnnouncementIntoForm(a);
+      };
+    });
+  }
+
+  function loadAnnouncementIntoForm(a) {
+    document.getElementById("aEditId").value = a.id;
+    document.getElementById("aType").value = a.type || "Test";
+    document.getElementById("aSubject").value = a.subject || "";
+    document.getElementById("aDate").value = a.date || "";
+    document.getElementById("aMessage").value = a.message || "";
+    document.getElementById("aFormTitle").textContent = "Edit announcement";
+  }
+
+  function resetAnnounceForm() {
+    document.getElementById("aEditId").value = "";
+    document.getElementById("aType").value = "Test";
+    document.getElementById("aSubject").value = "";
+    document.getElementById("aDate").value = "";
+    document.getElementById("aMessage").value = "";
+    document.getElementById("aFormTitle").textContent = "Add announcement";
+  }
+
+  document.getElementById("aSaveBtn").onclick = async () => {
+    const id = document.getElementById("aEditId").value;
+    const type = document.getElementById("aType").value;
+    const subject = document.getElementById("aSubject").value.trim();
+    const date = document.getElementById("aDate").value;
+    const message = document.getElementById("aMessage").value.trim();
+    const statusEl = document.getElementById("aSaveStatus");
+
+    if (!date || !message) {
+      statusEl.textContent = "Please fill in date and message.";
+      return;
+    }
+    statusEl.textContent = "Saving...";
+    try {
+      if (id) {
+        await updateDoc(doc(db, "announcements", id), { type, subject, date, message });
+      } else {
+        await addDoc(collection(db, "announcements"), { type, subject, date, message, createdAt: serverTimestamp() });
+      }
+      statusEl.textContent = "Saved.";
+      resetAnnounceForm();
+      setTimeout(() => statusEl.textContent = "", 1500);
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    }
+  };
+
+  // Admin tabs
+  document.getElementById("tabHomeworkBtn").onclick = () => {
+    document.getElementById("tabHomeworkBtn").classList.add("active");
+    document.getElementById("tabAnnounceBtn").classList.remove("active");
+    document.getElementById("homeworkPanel").style.display = "block";
+    document.getElementById("announcePanel").style.display = "none";
+  };
+  document.getElementById("tabAnnounceBtn").onclick = () => {
+    document.getElementById("tabAnnounceBtn").classList.add("active");
+    document.getElementById("tabHomeworkBtn").classList.remove("active");
+    document.getElementById("announcePanel").style.display = "block";
+    document.getElementById("homeworkPanel").style.display = "none";
+  };
 
   function renderFilters() {
     const subjects = ["All", ...new Set(allEntries.map(e => e.subject).filter(Boolean))];
