@@ -685,9 +685,21 @@
   };
 
   function doneLine(e) {
-    const lines = familyKids.filter(k => k.done && k.done[e.id]).map(k =>
-      (k.done[e.id] === "ontime" ? "✅ " : "👍 ") + escapeHtml(k.name) + (k.done[e.id] === "ontime" ? " · on time" : " · done"));
-    return lines.length ? `<p class="entry-desc" style="font-size:14px;">${lines.join("<br>")}</p>` : "";
+    const done = [], pending = [];
+    familyKids.forEach(k => {
+      const st = k.done && k.done[e.id];
+      if (st) {
+        done.push((st === "ontime" ? "✅ " : "👍 ") + "<b>" + escapeHtml(k.name) + "</b> · Completed" + (st === "ontime" ? " on time" : " late") + " · +" + (POINTS[st] || 0) + " points");
+      } else {
+        const applies = !e.grades?.length || e.grades.includes(k.grade);
+        const joined = k.createdAt && k.createdAt.toDate ? localISO(k.createdAt.toDate()) : "";
+        if (applies && (!joined || e.date >= joined)) pending.push("⏳ <b>" + escapeHtml(k.name) + "</b> · Still to do");
+      }
+    });
+    let html = "";
+    if (done.length) html += `<p class="entry-desc" style="font-size:14px;color:var(--moss-deep);">${done.join("<br>")}</p>`;
+    if (pending.length) html += `<p class="entry-desc" style="font-size:14px;color:var(--muted);">${pending.join("<br>")}</p>`;
+    return html;
   }
 
   // Teacher: mark who finished a homework; points are added automatically
