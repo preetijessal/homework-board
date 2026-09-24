@@ -326,6 +326,7 @@
       <div class="admin-tabs">
         <button class="chip active" id="tabHomeworkBtn">Homework</button>
         <button class="chip" id="tabAnnounceBtn">Announcements</button>
+        <button class="chip" id="tabPointsBtn">Points</button>
         <button class="chip" id="tabStudentsBtn">Students</button>
       </div>
 
@@ -348,6 +349,13 @@
         <hr class="divider">
         <p class="sub" style="margin-bottom:10px;">Existing entries — tap to edit</p>
         <div id="adminList" class="homework-list-admin"></div>
+      </div>
+
+      <div id="pointsPanel" style="display:none;">
+        <h2>Mark homework done</h2>
+        <label>Homework</label>
+        <select id="pHw"></select>
+        <div id="pList" class="homework-list-admin" style="margin-top:12px;"></div>
       </div>
 
       <div id="studentsPanel" style="display:none;">
@@ -429,6 +437,8 @@
   const gradeLabel = g => g === "K" ? "Kindergarten" : "Grade " + g;
   const localISO = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   const famToken = new URLSearchParams(location.search).get("f");
+  const POINTS = { ontime: 10, late: 5 };   // change these numbers to change the points
+  let familyKids = [];
   let familyGrades = famToken ? new Set() : null;   // set when a family opens their private link
   let families = {};                                  // teacher only: id -> {name, students, unsub}
 
@@ -452,6 +462,7 @@
     renderFilters();
     renderList();
     renderAdminList();
+    renderPointsPanel();
   });
 
   const aq = query(collection(db, "announcements"), orderBy("date", "asc"));
@@ -556,7 +567,7 @@
   };
 
   // Admin tabs
-  const tabs = { homework: ["tabHomeworkBtn","homeworkPanel"], announce: ["tabAnnounceBtn","announcePanel"], students: ["tabStudentsBtn","studentsPanel"] };
+  const tabs = { homework: ["tabHomeworkBtn","homeworkPanel"], announce: ["tabAnnounceBtn","announcePanel"], points: ["tabPointsBtn","pointsPanel"], students: ["tabStudentsBtn","studentsPanel"] };
   Object.entries(tabs).forEach(([k, [btn]]) => {
     document.getElementById(btn).onclick = () => Object.entries(tabs).forEach(([k2, [b2, p2]]) => {
       document.getElementById(b2).classList.toggle("active", k2 === k);
@@ -595,6 +606,7 @@
           <span class="entry-date">${formatDate(e.date)}</span>
         </div>
         <p class="entry-desc">${escapeHtml(e.description || "")}</p>
+        ${doneLine(e)}
         ${e.link ? `<a class="entry-link" href="${escapeAttr(e.link)}" target="_blank" rel="noopener">Open worksheet →</a>` : ""}
       </div>
     `).join("");
@@ -632,6 +644,7 @@
         ${f.students.map(st => `<p class="entry-desc" style="font-size:14px;">${escapeHtml(st.name)} · ${gradeLabel(st.grade)} · ⭐ ${st.points || 0} <button class="btn-danger" data-sdel="${id}|${st.id}">Remove</button></p>`).join("") || `<p class="entry-desc" style="font-size:14px;">No students yet</p>`}
       </div></div>`;
     }).join("") : `<p class="sub">No students added yet.</p>`;
+    renderPointsPanel();
 
     sAdminListEl.querySelectorAll("[data-copy]").forEach(btn => {
       btn.onclick = async () => {
@@ -671,6 +684,47 @@
     }
   };
 
+  function doneLine(e) {
+    const lines = familyKids.filter(k => k.done && k.done[e.id]).map(k =>
+      (k.done[e.id] === "ontime" ? "✅ " : "👍 ") + escapeHtml(k.name) + (k.done[e.id] === "ontime" ? " · on time" : " · done"));
+    return lines.length ? `<p class="entry-desc" style="font-size:14px;">${lines.join("<br>")}</p>` : "";
+  }
+
+  // Teacher: mark who finished a homework; points are added automatically
+  function renderPointsPanel() {
+    const sel = document.getElementById("pHw");
+    const cur = sel.value;
+    sel.innerHTML = allEntries.map(e => `<option value="${e.id}">${formatDate(e.date)} · ${escapeHtml(e.subject || "General")}${e.grades?.length ? " · Gr " + escapeHtml(e.grades.join(", ")) : ""}</option>`).join("");
+    if (allEntries.some(e => e.id === cur)) sel.value = cur;
+    const hw = allEntries.find(e => e.id === sel.value);
+    const list = document.getElementById("pList");
+    if (!hw) { list.innerHTML = `<p class="sub">Post some homework first.</p>`; return; }
+    const kids = Object.entries(families)
+      .flatMap(([fid, f]) => f.students.map(st => ({ ...st, fid })))
+      .filter(st => !hw.grades?.length || hw.grades.includes(st.grade))
+      .sort((a, b) => GRADES.indexOf(a.grade) - GRADES.indexOf(b.grade) || a.name.localeCompare(b.name));
+    if (!kids.length) { list.innerHTML = `<p class="sub">No students in the grades for this homework.</p>`; return; }
+    list.innerHTML = kids.map(st => {
+      const cur = st.done && st.done[hw.id];
+      const b = (val, label) => `<button class="chip ${(cur || "none") === val ? "active" : ""}" data-p="${st.fid}|${st.id}|${val}">${label}</button>`;
+      return `<div class="entry"><div class="entry-info">
+        <div class="entry-top"><span class="entry-subject">${escapeHtml(st.name)} · ${gradeLabel(st.grade)}</span><span class="entry-date">⭐ ${st.points || 0}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">${b("ontime", "On time +" + POINTS.ontime)}${b("late", "Late +" + POINTS.late)}${b("none", "Not done")}</div>
+      </div></div>`;
+    }).join("");
+    list.querySelectorAll("[data-p]").forEach(btn => {
+      btn.onclick = async () => {
+        const [fid, sid, val] = btn.dataset.p.split("|");
+        const stu = families[fid].students.find(x => x.id === sid);
+        const done = { ...(stu.done || {}) };
+        if (val === "none") delete done[hw.id]; else done[hw.id] = val;
+        const points = Object.values(done).reduce((n, v) => n + (POINTS[v] || 0), 0);
+        await updateDoc(doc(db, "families", fid, "students", sid), { done, points });
+      };
+    });
+  }
+  document.getElementById("pHw").onchange = renderPointsPanel;
+
   // Family view: opened from a private link like /?f=xxxx
   if (famToken) {
     getDoc(doc(db, "families", famToken)).then((snap) => {
@@ -682,6 +736,7 @@
       onSnapshot(collection(db, "families", famToken, "students"), (s) => {
         const kids = [];
         s.forEach(d => kids.push({ id: d.id, ...d.data() }));
+        familyKids = kids;
         familyGrades = new Set(kids.map(k => k.grade));
         familyWrapEl.innerHTML = `<div class="entry"><div class="entry-top"><span class="entry-subject">${escapeHtml(fam.name)}</span></div>` +
           kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>`).join("") + `</div>`;
