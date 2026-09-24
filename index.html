@@ -297,6 +297,7 @@
 </header>
 
 <div class="wrap">
+  <div id="familyWrap" style="margin-bottom:22px;"></div>
   <div class="announcements" id="announcementsWrap"></div>
   <div class="controls" id="subjectFilters"></div>
   <div id="list"></div>
@@ -325,6 +326,7 @@
       <div class="admin-tabs">
         <button class="chip active" id="tabHomeworkBtn">Homework</button>
         <button class="chip" id="tabAnnounceBtn">Announcements</button>
+        <button class="chip" id="tabStudentsBtn">Students</button>
       </div>
 
       <div id="homeworkPanel">
@@ -334,6 +336,8 @@
         <input type="text" id="fSubject" placeholder="e.g. Math">
         <label>Date</label>
         <input type="date" id="fDate">
+        <label>Grades (leave empty for everyone)</label>
+        <div id="fGrades"></div>
         <label>Instructions</label>
         <textarea id="fDesc" placeholder="What should students do?"></textarea>
         <label>Worksheet / link (optional)</label>
@@ -344,6 +348,22 @@
         <hr class="divider">
         <p class="sub" style="margin-bottom:10px;">Existing entries — tap to edit</p>
         <div id="adminList" class="homework-list-admin"></div>
+      </div>
+
+      <div id="studentsPanel" style="display:none;">
+        <h2>Add student</h2>
+        <label>Student first name</label>
+        <input type="text" id="sName" placeholder="e.g. Aman">
+        <label>Grade</label>
+        <select id="sGrade"></select>
+        <label>Family (siblings share the same family name)</label>
+        <input type="text" id="sFamily" list="familyList" placeholder="e.g. Kaur family">
+        <datalist id="familyList"></datalist>
+        <button class="btn btn-primary" id="sSaveBtn">Add student</button>
+        <p class="status-msg" id="sSaveStatus"></p>
+        <hr class="divider">
+        <p class="sub" style="margin-bottom:10px;">Families — copy each family's private link and send it to the parent</p>
+        <div id="sAdminList" class="homework-list-admin"></div>
       </div>
 
       <div id="announcePanel" style="display:none;">
@@ -381,7 +401,7 @@
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
     getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
-    onSnapshot, query, orderBy, serverTimestamp
+    onSnapshot, query, orderBy, serverTimestamp, setDoc, getDoc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ====== PASTE YOUR FIREBASE CONFIG HERE ======
@@ -404,13 +424,26 @@
 
   let allEntries = [];
   let allAnnouncements = [];
-  let activeSubject = "All";
+  let activeGrade = "All";
+  const GRADES = ["K","1","2","3","4","5","6","7","8"];
+  const gradeLabel = g => g === "K" ? "Kindergarten" : "Grade " + g;
+  const localISO = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  const famToken = new URLSearchParams(location.search).get("f");
+  let familyGrades = famToken ? new Set() : null;   // set when a family opens their private link
+  let families = {};                                  // teacher only: id -> {name, students, unsub}
 
   const listEl = document.getElementById("list");
   const filtersEl = document.getElementById("subjectFilters");
   const adminListEl = document.getElementById("adminList");
   const announceWrapEl = document.getElementById("announcementsWrap");
   const aAdminListEl = document.getElementById("aAdminList");
+  const sAdminListEl = document.getElementById("sAdminList");
+  const familyWrapEl = document.getElementById("familyWrap");
+  const fGradesEl = document.getElementById("fGrades");
+  fGradesEl.innerHTML = GRADES.map(g => `<label style="display:inline-flex;align-items:center;gap:4px;margin:0 12px 6px 0;font-weight:400"><input type="checkbox" value="${g}" style="width:auto;margin:0"> ${g}</label>`).join("");
+  document.getElementById("sGrade").innerHTML = GRADES.map(g => `<option value="${g}">${gradeLabel(g)}</option>`).join("");
+  const getGrades = () => [...fGradesEl.querySelectorAll("input:checked")].map(i => i.value);
+  const setGrades = arr => fGradesEl.querySelectorAll("input").forEach(i => i.checked = (arr || []).includes(i.value));
 
   const q = query(collection(db, "homework"), orderBy("date", "desc"));
   onSnapshot(q, (snap) => {
@@ -430,8 +463,8 @@
   });
 
   function renderAnnouncements() {
-    const today = new Date().toISOString().slice(0, 10);
-    const upcoming = allAnnouncements.filter(a => !a.date || a.date >= today);
+    const cutoff = localISO(new Date(Date.now() - 7 * 86400000));   // shown for 7 days after their date
+    const upcoming = allAnnouncements.filter(a => !a.date || a.date >= cutoff);
 
     if (upcoming.length === 0) {
       announceWrapEl.innerHTML = "";
@@ -523,49 +556,140 @@
   };
 
   // Admin tabs
-  document.getElementById("tabHomeworkBtn").onclick = () => {
-    document.getElementById("tabHomeworkBtn").classList.add("active");
-    document.getElementById("tabAnnounceBtn").classList.remove("active");
-    document.getElementById("homeworkPanel").style.display = "block";
-    document.getElementById("announcePanel").style.display = "none";
-  };
-  document.getElementById("tabAnnounceBtn").onclick = () => {
-    document.getElementById("tabAnnounceBtn").classList.add("active");
-    document.getElementById("tabHomeworkBtn").classList.remove("active");
-    document.getElementById("announcePanel").style.display = "block";
-    document.getElementById("homeworkPanel").style.display = "none";
-  };
+  const tabs = { homework: ["tabHomeworkBtn","homeworkPanel"], announce: ["tabAnnounceBtn","announcePanel"], students: ["tabStudentsBtn","studentsPanel"] };
+  Object.entries(tabs).forEach(([k, [btn]]) => {
+    document.getElementById(btn).onclick = () => Object.entries(tabs).forEach(([k2, [b2, p2]]) => {
+      document.getElementById(b2).classList.toggle("active", k2 === k);
+      document.getElementById(p2).style.display = k2 === k ? "block" : "none";
+    });
+  });
+
+  // Homework board: filter by grade (entries with no grade are for everyone)
+  function visibleEntries() {
+    if (familyGrades) return allEntries.filter(e => !e.grades?.length || e.grades.some(g => familyGrades.has(g)));
+    if (activeGrade === "All") return allEntries;
+    return allEntries.filter(e => !e.grades?.length || e.grades.includes(activeGrade));
+  }
 
   function renderFilters() {
-    const subjects = ["All", ...new Set(allEntries.map(e => e.subject).filter(Boolean))];
-    filtersEl.innerHTML = subjects.map(s =>
-      `<button class="chip ${s === activeSubject ? 'active' : ''}" data-subj="${escapeAttr(s)}">${escapeHtml(s)}</button>`
+    if (familyGrades) { filtersEl.innerHTML = ""; return; }
+    const used = GRADES.filter(g => allEntries.some(e => e.grades?.includes(g)));
+    filtersEl.innerHTML = ["All", ...used].map(g =>
+      `<button class="chip ${g === activeGrade ? 'active' : ''}" data-g="${g}">${g === "All" ? "All" : gradeLabel(g)}</button>`
     ).join("");
     filtersEl.querySelectorAll(".chip").forEach(btn => {
-      btn.onclick = () => { activeSubject = btn.dataset.subj; renderFilters(); renderList(); };
+      btn.onclick = () => { activeGrade = btn.dataset.g; renderFilters(); renderList(); };
     });
   }
 
   function renderList() {
-    const entries = activeSubject === "All"
-      ? allEntries
-      : allEntries.filter(e => e.subject === activeSubject);
-
+    const entries = visibleEntries();
     if (entries.length === 0) {
       listEl.innerHTML = `<div class="empty">No homework posted yet. Check back soon.</div>`;
       return;
     }
-
     listEl.innerHTML = entries.map(e => `
       <div class="entry">
         <div class="entry-top">
-          <span class="entry-subject">${escapeHtml(e.subject || "General")}</span>
+          <span class="entry-subject">${escapeHtml(e.subject || "General")}${e.grades?.length ? " · Gr " + escapeHtml(e.grades.join(", ")) : ""}</span>
           <span class="entry-date">${formatDate(e.date)}</span>
         </div>
         <p class="entry-desc">${escapeHtml(e.description || "")}</p>
         ${e.link ? `<a class="entry-link" href="${escapeAttr(e.link)}" target="_blank" rel="noopener">Open worksheet →</a>` : ""}
       </div>
     `).join("");
+  }
+
+  // Teacher: students and families (loaded only after teacher sign-in)
+  let teacherStarted = false;
+  function startTeacherData() {
+    if (teacherStarted) return;
+    teacherStarted = true;
+    onSnapshot(collection(db, "families"), (snap) => {
+      const seen = new Set();
+      snap.forEach(d => {
+        seen.add(d.id);
+        const f = families[d.id] = families[d.id] || { students: [] };
+        f.name = d.data().name;
+        if (!f.unsub) f.unsub = onSnapshot(collection(db, "families", d.id, "students"), (s) => {
+          f.students = [];
+          s.forEach(x => f.students.push({ id: x.id, ...x.data() }));
+          renderStudentsAdmin();
+        });
+      });
+      Object.keys(families).forEach(id => { if (!seen.has(id) && families[id].unsub) { families[id].unsub(); delete families[id]; } });
+      renderStudentsAdmin();
+    });
+  }
+
+  function renderStudentsAdmin() {
+    const ids = Object.keys(families).sort((a, b) => (families[a].name || "").localeCompare(families[b].name || ""));
+    document.getElementById("familyList").innerHTML = ids.map(id => `<option value="${escapeAttr(families[id].name || "")}">`).join("");
+    sAdminListEl.innerHTML = ids.length ? ids.map(id => {
+      const f = families[id];
+      return `<div class="entry"><div class="entry-info">
+        <div class="entry-top"><span class="entry-subject">${escapeHtml(f.name || "")}</span><button class="btn-ghost" data-copy="${id}">Copy link</button></div>
+        ${f.students.map(st => `<p class="entry-desc" style="font-size:14px;">${escapeHtml(st.name)} · ${gradeLabel(st.grade)} · ⭐ ${st.points || 0} <button class="btn-danger" data-sdel="${id}|${st.id}">Remove</button></p>`).join("") || `<p class="entry-desc" style="font-size:14px;">No students yet</p>`}
+      </div></div>`;
+    }).join("") : `<p class="sub">No students added yet.</p>`;
+
+    sAdminListEl.querySelectorAll("[data-copy]").forEach(btn => {
+      btn.onclick = async () => {
+        await navigator.clipboard.writeText(location.origin + location.pathname + "?f=" + btn.dataset.copy);
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy link", 1500);
+      };
+    });
+    sAdminListEl.querySelectorAll("[data-sdel]").forEach(btn => {
+      btn.onclick = async () => {
+        const [fid, sid] = btn.dataset.sdel.split("|");
+        if (confirm("Remove this student?")) await deleteDoc(doc(db, "families", fid, "students", sid));
+      };
+    });
+  }
+
+  document.getElementById("sSaveBtn").onclick = async () => {
+    const name = document.getElementById("sName").value.trim();
+    const grade = document.getElementById("sGrade").value;
+    const famName = document.getElementById("sFamily").value.trim();
+    const statusEl = document.getElementById("sSaveStatus");
+    if (!name || !famName) { statusEl.textContent = "Please enter the student's name and family."; return; }
+    statusEl.textContent = "Saving...";
+    try {
+      let fid = Object.keys(families).find(id => (families[id].name || "").toLowerCase() === famName.toLowerCase());
+      if (!fid) {
+        fid = crypto.randomUUID().replace(/-/g, "");   // long random id = the family's private link
+        families[fid] = { name: famName, students: [] };
+        await setDoc(doc(db, "families", fid), { name: famName, createdAt: serverTimestamp() });
+      }
+      await addDoc(collection(db, "families", fid, "students"), { name, grade, points: 0, createdAt: serverTimestamp() });
+      document.getElementById("sName").value = "";
+      statusEl.textContent = "Added.";
+      setTimeout(() => statusEl.textContent = "", 1500);
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    }
+  };
+
+  // Family view: opened from a private link like /?f=xxxx
+  if (famToken) {
+    getDoc(doc(db, "families", famToken)).then((snap) => {
+      if (!snap.exists()) {
+        familyWrapEl.innerHTML = `<div class="empty">This link isn't valid. Please ask your teacher for a new one.</div>`;
+        return;
+      }
+      const fam = snap.data();
+      onSnapshot(collection(db, "families", famToken, "students"), (s) => {
+        const kids = [];
+        s.forEach(d => kids.push({ id: d.id, ...d.data() }));
+        familyGrades = new Set(kids.map(k => k.grade));
+        familyWrapEl.innerHTML = `<div class="entry"><div class="entry-top"><span class="entry-subject">${escapeHtml(fam.name)}</span></div>` +
+          kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>`).join("") + `</div>`;
+        renderFilters(); renderList();
+      });
+    }).catch(() => {
+      familyWrapEl.innerHTML = `<div class="empty">Couldn't open this page. Please try again later.</div>`;
+    });
   }
 
   function renderAdminList() {
@@ -601,6 +725,7 @@
     document.getElementById("fDate").value = e.date || "";
     document.getElementById("fDesc").value = e.description || "";
     document.getElementById("fLink").value = e.link || "";
+    setGrades(e.grades);
     document.getElementById("formTitle").textContent = "Edit homework";
   }
 
@@ -610,6 +735,7 @@
     document.getElementById("fDate").value = "";
     document.getElementById("fDesc").value = "";
     document.getElementById("fLink").value = "";
+    setGrades([]);
     document.getElementById("formTitle").textContent = "Add homework";
   }
 
@@ -619,6 +745,7 @@
     const date = document.getElementById("fDate").value;
     const description = document.getElementById("fDesc").value.trim();
     const link = document.getElementById("fLink").value.trim();
+    const grades = getGrades();
     const statusEl = document.getElementById("saveStatus");
 
     if (!subject || !date || !description) {
@@ -628,9 +755,9 @@
     statusEl.textContent = "Saving...";
     try {
       if (id) {
-        await updateDoc(doc(db, "homework", id), { subject, date, description, link });
+        await updateDoc(doc(db, "homework", id), { subject, date, description, link, grades });
       } else {
-        await addDoc(collection(db, "homework"), { subject, date, description, link, createdAt: serverTimestamp() });
+        await addDoc(collection(db, "homework"), { subject, date, description, link, grades, createdAt: serverTimestamp() });
       }
       statusEl.textContent = "Saved.";
       resetForm();
@@ -655,6 +782,7 @@
       loginView.style.display = "none";
       adminView.style.display = "block";
       document.getElementById("signedInAs").textContent = "Signed in as " + user.email;
+      startTeacherData();
     } else if (user) {
       document.getElementById("loginStatus").textContent = "This Google account isn't authorized as teacher.";
       signOut(auth);
