@@ -735,6 +735,81 @@
       };
     });
   }
+    // ===== Quick award =====
+  const sumPts = o => Object.values(o || {}).reduce((n, v) => n + (POINTS[v] || 0), 0);
+  const awardPts = a => (a || []).reduce((n, x) => n + (Number(x.points) || 0), 0);
+  let qSel = new Set(), qWhere = "";
+  const $ = id => document.getElementById(id);
+  $("qDate").value = localISO(new Date());
+  const allKids = () => Object.entries(families)
+    .flatMap(([fid, f]) => f.students.map(st => ({ ...st, fid, key: fid + "|" + st.id })))
+    .sort((a, b) => GRADES.indexOf(a.grade) - GRADES.indexOf(b.grade) || a.name.localeCompare(b.name));
+  const chipBtn = (attr, val, label, on) => `<button class="chip ${on ? "active" : ""}" ${attr}="${escapeAttr(val)}">${escapeHtml(label)}</button>`;
+
+  function awardsHtml(k) {
+    const list = (k.awards || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.at || 0) - (a.at || 0)).slice(0, 5);
+    if (!list.length) return "";
+    return `<p class="entry-desc" style="font-size:14px;color:var(--moss-deep);">` + list.map(a =>
+      "⭐ +" + a.points + " · " + escapeHtml(a.topic) + " · " + formatDate(a.date) + (a.where ? " · " + escapeHtml(a.where) : "") +
+      (a.note ? "<br><span style='color:var(--muted)'>" + escapeHtml(a.note) + "</span>" : "")
+    ).join("<br>") + `</p>`;
+  }
+
+  function renderQuick() {
+    const kids = allKids();
+    qSel = new Set([...qSel].filter(k => kids.some(x => x.key === k)));
+    const used = GRADES.filter(g => kids.some(k => k.grade === g));
+    $("qGradeBtns").innerHTML = `<button class="chip" data-qall="1">All</button><button class="chip" data-qall="0">Clear</button>` +
+      used.map(g => `<button class="chip" data-qg="${g}">Gr ${g}</button>`).join("");
+    $("qStudents").innerHTML = kids.map(k => chipBtn("data-qs", k.key, k.name, qSel.has(k.key))).join("") || `<p class="sub">Add students first.</p>`;
+    const cnt = {};
+    kids.forEach(k => (k.awards || []).forEach(a => cnt[a.topic] = (cnt[a.topic] || 0) + 1));
+    $("qTopicChips").innerHTML = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]).slice(0, 8).map(t => chipBtn("data-qt", t, t, false)).join("");
+    $("qPtsBtns").innerHTML = [1, 2, 3, 5, 10].map(v => chipBtn("data-qp", v, "+" + v, $("qPts").value === String(v))).join("");
+    $("qWhere").innerHTML = ["Home", "Tuition"].map(w => chipBtn("data-qw", w, w, qWhere === w)).join("");
+    const recent = kids.flatMap(k => (k.awards || []).map(a => ({ ...a, k }))).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 10);
+    $("qRecent").innerHTML = recent.map(a => `<div class="entry"><div class="entry-info"><div class="entry-top"><span class="entry-subject">${escapeHtml(a.k.name)} · ${escapeHtml(a.topic)}</span><span class="entry-date">+${a.points} · ${formatDate(a.date)}</span></div></div><button class="btn-danger" data-qundo="${a.k.key}|${a.id}">Undo</button></div>`).join("");
+  }
+
+  $("pointsPanel").addEventListener("click", async (ev) => {
+    const t = ev.target.closest("button"); if (!t) return;
+    const d = t.dataset;
+    if (d.qs) { qSel.has(d.qs) ? qSel.delete(d.qs) : qSel.add(d.qs); renderQuick(); }
+    else if (d.qall) { qSel = d.qall === "1" ? new Set(allKids().map(k => k.key)) : new Set(); renderQuick(); }
+    else if (d.qg) {
+      const ks = allKids().filter(k => k.grade === d.qg).map(k => k.key);
+      const all = ks.every(k => qSel.has(k));
+      ks.forEach(k => all ? qSel.delete(k) : qSel.add(k));
+      renderQuick();
+    }
+    else if (d.qt) { $("qTopic").value = d.qt; }
+    else if (d.qp) { $("qPts").value = d.qp; renderQuick(); }
+    else if (d.qw !== undefined) { qWhere = qWhere === d.qw ? "" : d.qw; renderQuick(); }
+    else if (d.qundo) {
+      if (!confirm("Remove this award?")) return;
+      const [fid, sid, aid] = d.qundo.split("|");
+      const stu = families[fid].students.find(x => x.id === sid);
+      const awards = (stu.awards || []).filter(a => a.id !== aid);
+      await updateDoc(doc(db, "families", fid, "students", sid), { awards, points: sumPts(stu.done) + awardPts(awards) });
+    }
+    else if (t.id === "qGo") {
+      const topic = $("qTopic").value.trim(), pts = parseInt($("qPts").value, 10), date = $("qDate").value, note = $("qNote").value.trim();
+      const st = $("qStatus");
+      if (!qSel.size || !topic || !(pts > 0) || !date) { st.textContent = "Pick students, a topic and points."; return; }
+      st.textContent = "Saving...";
+      try {
+        const chosen = allKids().filter(k => qSel.has(k.key));
+        await Promise.all(chosen.map(k => {
+          const awards = [...(k.awards || []), { id: crypto.randomUUID().slice(0, 8), topic, points: pts, date, note, where: qWhere, at: Date.now() }];
+          return updateDoc(doc(db, "families", k.fid, "students", k.id), { awards, points: sumPts(k.done) + awardPts(awards) });
+        }));
+        st.textContent = "Awarded +" + pts + " to " + chosen.length + " student" + (chosen.length > 1 ? "s" : "") + ".";
+        $("qTopic").value = ""; $("qNote").value = ""; qSel = new Set();
+        renderQuick();
+        setTimeout(() => st.textContent = "", 2500);
+      } catch (err) { st.textContent = "Error: " + err.message; }
+    }
+  });
   document.getElementById("pHw").onchange = renderPointsPanel;
 
   // Family view: opened from a private link like /?f=xxxx
