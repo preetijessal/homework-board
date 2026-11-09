@@ -731,7 +731,7 @@
         const stu = families[fid].students.find(x => x.id === sid);
         const done = { ...(stu.done || {}) };
         if (val === "none") delete done[hw.id]; else done[hw.id] = val;
-        const points = sumPts(done) + awardPts(stu.awards);;
+        const points = sumPts(done) + awardPts(stu.awards);
         await updateDoc(doc(db, "families", fid, "students", sid), { done, points });
       };
     });
