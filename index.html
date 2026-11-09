@@ -433,7 +433,7 @@
   let allEntries = [];
   let allAnnouncements = [];
   let activeGrade = "All";
-  const GRADES = ["K","1","2","3","4","5","6","7","8"];
+  const GRADES = ["K","1","2","3","4","5","6","7","8","9","10"];
   const gradeLabel = g => g === "K" ? "Kindergarten" : "Grade " + g;
   const localISO = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   const famToken = new URLSearchParams(location.search).get("f");
