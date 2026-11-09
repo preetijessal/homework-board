@@ -827,7 +827,7 @@
         familyKids = kids;
         familyGrades = new Set(kids.map(k => k.grade));
         familyWrapEl.innerHTML = `<div class="entry"><div class="entry-top"><span class="entry-subject">${escapeHtml(fam.name)}</span></div>` +
-          kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>`).join("") + `</div>`;
+                    kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>` + awardsHtml(k)).join("") + `</div>`;
         renderFilters(); renderList();
       });
     }).catch(() => {
