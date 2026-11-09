@@ -704,6 +704,7 @@
 
   // Teacher: mark who finished a homework; points are added automatically
   function renderPointsPanel() {
+    renderQuick(); {
     const sel = document.getElementById("pHw");
     const cur = sel.value;
     sel.innerHTML = allEntries.map(e => `<option value="${e.id}">${formatDate(e.date)} · ${escapeHtml(e.subject || "General")}${e.grades?.length ? " · Gr " + escapeHtml(e.grades.join(", ")) : ""}</option>`).join("");
