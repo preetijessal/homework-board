@@ -352,7 +352,36 @@
       </div>
 
       <div id="pointsPanel" style="display:none;">
-   <h2>Quick award</h2>         <p class="sub">Log points without posting homework.</p>         <label>Students</label>         <div id="qGradeBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>         <div id="qStudents" style="display:flex;gap:6px;flex-wrap:wrap;"></div>         <label>Topic</label>         <input type="text" id="qTopic" placeholder="e.g. Fractions">         <div id="qTopicChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>         <label>Points</label>         <div id="qPtsBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>         <input type="number" id="qPts" min="1" placeholder="Or type a number">         <label>Date</label>         <input type="date" id="qDate">         <label>Where (optional)</label>         <div id="qWhere" style="display:flex;gap:6px;"></div>         <label>Note (optional)</label>         <input type="text" id="qNote" placeholder="e.g. Did really well">         <button class="btn btn-primary" id="qGo">Award points</button>         <p class="status-msg" id="qStatus"></p>         <hr class="divider">         <p class="sub" style="margin-bottom:10px;">Recent awards (tap Undo to remove)</p>         <div id="qRecent" class="homework-list-admin"></div>         <hr class="divider">         <h2>Mark homework done</h2>
+        <h2>Quick award</h2>
+        <p class="sub">Log points without posting homework.</p>
+        <label>Students</label>
+        <div id="qGradeBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+        <div id="qStudents" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        <label>Topic</label>
+        <input type="text" id="qTopic" placeholder="e.g. Fractions">
+        <div id="qTopicChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
+        <label>Points</label>
+        <div id="qPtsBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+        <input type="number" id="qPts" min="1" placeholder="Or type a number">
+        <label>Date</label>
+        <input type="date" id="qDate">
+        <label>Where (optional)</label>
+        <div id="qWhere" style="display:flex;gap:6px;"></div>
+        <label>Note (optional)</label>
+        <input type="text" id="qNote" placeholder="e.g. Did really well">
+        <button class="btn btn-primary" id="qGo">Award points</button>
+        <p class="status-msg" id="qStatus"></p>
+        <label>Message for parent group</label>
+        <textarea id="qMsg" style="min-height:130px;"></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn btn-primary" id="qWa" style="margin-top:0;flex:1;">Send to WhatsApp</button>
+          <button class="btn btn-ghost" id="qCopy" style="border:1px solid var(--rule);">Copy</button>
+        </div>
+        <hr class="divider">
+        <p class="sub" style="margin-bottom:10px;">Recent awards (tap Undo to remove)</p>
+        <div id="qRecent" class="homework-list-admin"></div>
+        <hr class="divider">
+        <h2>Mark homework done</h2>
         <label>Homework</label>
         <select id="pHw"></select>
         <div id="pList" class="homework-list-admin" style="margin-top:12px;"></div>
@@ -704,7 +733,7 @@
 
   // Teacher: mark who finished a homework; points are added automatically
   function renderPointsPanel() {
-    renderQuick(); 
+    renderQuick();
     const sel = document.getElementById("pHw");
     const cur = sel.value;
     sel.innerHTML = allEntries.map(e => `<option value="${e.id}">${formatDate(e.date)} · ${escapeHtml(e.subject || "General")}${e.grades?.length ? " · Gr " + escapeHtml(e.grades.join(", ")) : ""}</option>`).join("");
@@ -736,7 +765,8 @@
       };
     });
   }
-    // ===== Quick award =====
+
+  // ===== Quick award =====
   const sumPts = o => Object.values(o || {}).reduce((n, v) => n + (POINTS[v] || 0), 0);
   const awardPts = a => (a || []).reduce((n, x) => n + (Number(x.points) || 0), 0);
   let qSel = new Set(), qWhere = "";
@@ -756,9 +786,26 @@
     ).join("<br>") + `</p>`;
   }
 
+  // WhatsApp group message (built from all awards on the chosen date)
+  let qMsgEdited = false;
+  function buildMsg() {
+    const date = $("qDate").value;
+    const rows = allKids().map(k => ({ k, a: (k.awards || []).filter(x => x.date === date) })).filter(r => r.a.length);
+    if (!rows.length) return "";
+    const day = new Date(date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    return "⭐ Points update · " + day + "\n\n" +
+      rows.map(r => r.k.name + ": " + r.a.map(x => "+" + x.points + " " + x.topic).join(", ")).join("\n") +
+      "\n\nTotal points: " + rows.map(r => r.k.name + " " + (r.k.points || 0)).join(" · ") +
+      "\n\nKeep it up! 👏";
+  }
+  function updateMsg() { if (!qMsgEdited) $("qMsg").value = buildMsg(); }
+  $("qMsg").addEventListener("input", () => qMsgEdited = true);
+  $("qDate").addEventListener("change", () => { qMsgEdited = false; updateMsg(); });
+
   function renderQuick() {
     const kids = allKids();
     qSel = new Set([...qSel].filter(k => kids.some(x => x.key === k)));
+    updateMsg();
     const used = GRADES.filter(g => kids.some(k => k.grade === g));
     $("qGradeBtns").innerHTML = `<button class="chip" data-qall="1">All</button><button class="chip" data-qall="0">Clear</button>` +
       used.map(g => `<button class="chip" data-qg="${g}">Gr ${g}</button>`).join("");
@@ -793,6 +840,14 @@
       const awards = (stu.awards || []).filter(a => a.id !== aid);
       await updateDoc(doc(db, "families", fid, "students", sid), { awards, points: sumPts(stu.done) + awardPts(awards) });
     }
+    else if (t.id === "qWa") {
+      const m = $("qMsg").value.trim();
+      if (m) window.open("https://wa.me/?text=" + encodeURIComponent(m), "_blank");
+    }
+    else if (t.id === "qCopy") {
+      await navigator.clipboard.writeText($("qMsg").value);
+      t.textContent = "Copied!"; setTimeout(() => t.textContent = "Copy", 1500);
+    }
     else if (t.id === "qGo") {
       const topic = $("qTopic").value.trim(), pts = parseInt($("qPts").value, 10), date = $("qDate").value, note = $("qNote").value.trim();
       const st = $("qStatus");
@@ -805,7 +860,7 @@
           return updateDoc(doc(db, "families", k.fid, "students", k.id), { awards, points: sumPts(k.done) + awardPts(awards) });
         }));
         st.textContent = "Awarded +" + pts + " to " + chosen.length + " student" + (chosen.length > 1 ? "s" : "") + ".";
-        $("qTopic").value = ""; $("qNote").value = ""; qSel = new Set();
+        $("qTopic").value = ""; $("qNote").value = ""; qSel = new Set(); qMsgEdited = false;
         renderQuick();
         setTimeout(() => st.textContent = "", 2500);
       } catch (err) { st.textContent = "Error: " + err.message; }
@@ -827,7 +882,7 @@
         familyKids = kids;
         familyGrades = new Set(kids.map(k => k.grade));
         familyWrapEl.innerHTML = `<div class="entry"><div class="entry-top"><span class="entry-subject">${escapeHtml(fam.name)}</span></div>` +
-                    kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>` + awardsHtml(k)).join("") + `</div>`;
+          kids.map(k => `<p class="entry-desc"><b>${escapeHtml(k.name)}</b> · ${gradeLabel(k.grade)} · ⭐ ${k.points || 0} points</p>` + awardsHtml(k)).join("") + `</div>`;
         renderFilters(); renderList();
       });
     }).catch(() => {
